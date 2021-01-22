@@ -1,4 +1,4 @@
-import sys   # Jan 21 1:04 am
+import sys   # Jan 21 9:27 pm
 import socket
 import threading
 import os
@@ -10,9 +10,10 @@ from Crypto.Cipher import DES3
 prDc={}
 
 toGrpFlag=False
+grpName=''
 
 
-
+active_users=[]
 
 
 
@@ -148,8 +149,25 @@ def generatePrivateKey():
 
     return pr_key_alice
 
+def generateRandomGroupKey():
+
+    no=random.randint(pow(10,23),pow(10,24)-1)
+    no=str(no).encode()  # 24Byte key
+    #print(no)
 
 
+    crypt_msg=hashlib.sha256()
+    crypt_msg.update(no)
+
+
+    #print(crypt_msg.hexdigest())
+
+    pr_key_alice=crypt_msg.hexdigest()  # Gets private key in hashed string format (hex format)
+    pr_key_alice=int(pr_key_alice,16)  # key in integer..
+
+    print(len(no))
+
+    return pr_key_alice # int  return type
 
 
 
@@ -189,6 +207,7 @@ class myclient:
 
 
 def serverthread(curr_port):
+    global toGrpFlag
     with socket.socket(socket.AF_INET,socket.SOCK_STREAM) as s:
         s.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1)
         s.bind((host,int(curr_port)))
@@ -221,19 +240,23 @@ def serverthread(curr_port):
                 f.close()'''
 
             data=conn.recv(1024)
+            print(data)
             msg=data.decode()
 
+            print(msg)
+
+            
             if(msg[0]=='K'):
                 tmp=int(msg[1:])  # Public key alice
-                print('Alice public key: '+str(tmp))
+                #print('Alice public key: '+str(tmp))
 
                 server_key=generatePrivateKey()  # Created private key
 
-                print('Server_key is '+str(server_key))
+                #print('Server_key is '+str(server_key))
 
                 serv_public_key=generatePublicKey(server_key)  # created public key on server side
 
-                print('Serv public key is '+str(serv_public_key))
+                #print('Serv public key is '+str(serv_public_key))
 
                 conn.sendall(str(serv_public_key).encode())  # sent the public key to the server
 
@@ -245,10 +268,23 @@ def serverthread(curr_port):
                 msg=des3Decrypt(kb,encrypt_msg_recvd)  # In Bytes..
 
                 msg=msg.decode()
+            
+            else:
+                msglist=msg.split(';')
+                encrypt_msg_recvd=conn.recv(1024)
+                kb=msglist[2]
 
-                ####################################################################
+                msg=des3Decrypt(kb,encrypt_msg_recvd)  # In Bytes..
+
+                msg=msg.decode()
+                
 
 
+
+
+
+
+            ####################################################################
 
 
             mylst=msg.strip().split(';',2)
@@ -273,13 +309,17 @@ def serverthread(curr_port):
                 f.write(cont)
                 f.close()
 
+
+            
+
             
         
         # s.close()
 
 def sendmsg(s,usr,mesage):
     global toGrpFlag
-    strn = "port;"+usr+";"
+    strn = "port;"+usr+";"+curr_user
+    print(strn)
     s.sendall(strn.encode())
     data = s.recv(1024).decode()
     mylst=data.split(";")
@@ -292,22 +332,45 @@ def sendmsg(s,usr,mesage):
             if usr!=mylst[-1]:
                 cli_port=int(usr)
                 with socket.socket(socket.AF_INET,socket.SOCK_STREAM) as s:
-                    print(cli_port)
-                    s.connect((host,cli_port))
-                    ska=keyCall(s)  # For sending and receiving public keys  # shared key is in string here
 
-                    ska=trimKey(ska)  # trim to 24 Bytes
+                    if(toGrpFlag==False):
 
-                    #s.sendall(mesage.encode())
-                    encrypt_text=des3Encrypt(ska,mesage.encode())  # Encryption decryption done here..
-                    s.sendall(encrypt_text)
+                        s.connect((host,cli_port))
+                        ska=keyCall(s)  # For sending and receiving public keys  # shared key is in string here
+
+                        ska=trimKey(ska)  # trim to 24 Bytes
+
+                        #s.sendall(mesage.encode())
+                        encrypt_text=des3Encrypt(ska,mesage.encode())  # Encryption decryption done here..
+                        s.sendall(encrypt_text)
+                    
+                    else:
+
+                        s.connect((host,cli_port))
+                        
+                        ska=generateRandomGroupKey()  # For sending and receiving public keys  # shared key is in string here
+
+                        ska=str(ska)
+                        ska=trimKey(ska)  # trim to 24 Bytes
+
+                        s.sendall(("G;"+usr+';'+ska).encode())
+                        prDc[usr]=ska
+                        grpName=usr
+
+                        #s.sendall(mesage.encode())
+                        encrypt_text=des3Encrypt(ska,mesage.encode())  # Encryption decryption done here..
+
+                        s.sendall(encrypt_text)
+        toGrpFlag=False
+
+
         print("Message sent successfully")
         s.close()
 
 
 def sendfile(s,usr,filepath):
     global toGrpFlag
-    strn = "port;"+usr+";"
+    strn = "port;"+usr+";"+curr_user
     s.sendall(strn.encode())
     data = s.recv(1024).decode()
     mylst=data.split(";")
@@ -320,7 +383,6 @@ def sendfile(s,usr,filepath):
             if usr!=mylst[-1]:
                 cli_port=int(usr)
                 with socket.socket(socket.AF_INET,socket.SOCK_STREAM) as s:
-                    print(cli_port)
                     s.connect((host,cli_port))
                     message = "sendfile;"+filepath+";"
 
@@ -329,20 +391,40 @@ def sendfile(s,usr,filepath):
                     message=message.encode()
                     f.close()
 
-                    ska=keyCall(s)  # For sending and receiving public keys  # shared key is in string here
+                    if toGrpFlag==False:
+                        ska=keyCall(s)  # For sending and receiving public keys  # shared key is in string here
 
-                    ska=trimKey(ska)  # trim to 24 Bytes
+                        ska=trimKey(ska)  # trim to 24 Bytes
 
-                    #s.sendall(mesage.encode())
-                    encrypt_text=des3Encrypt(ska,message)  # Encryption decryption done here..
-                    s.sendall(encrypt_text)
+                        #s.sendall(mesage.encode())
+                        encrypt_text=des3Encrypt(ska,message)  # Encryption decryption done here..
+                        s.sendall(encrypt_text)
 
-                    encrypt_text=des3Encrypt(ska,cont)
-                    s.sendall(encrypt_text)
+                        encrypt_text=des3Encrypt(ska,cont)
+                        s.sendall(encrypt_text)
 
 
-                    #s.sendall(message)
-                    #s.sendall(cont)
+                        #s.sendall(message)
+                        #s.sendall(cont)
+                        
+                    else:
+                        ska=generateRandomGroupKey()  # For sending and receiving public keys  # shared key is in string here
+
+                        ska=str(ska)
+                        ska=trimKey(ska)  # trim to 24 Bytes
+
+                        s.sendall(("G;"+usr+';'+ska).encode())
+                        prDc[usr]=ska
+                        grpName=usr
+
+                        #s.sendall(mesage.encode())
+                        encrypt_text=des3Encrypt(ska,message)  # Encryption decryption done here..
+
+                        s.sendall(encrypt_text)
+
+                        encrypt_text=des3Encrypt(ska,cont)  # Encryption decryption done here..
+
+                        s.sendall(encrypt_text)
                     print("File sent successfully")
         s.close()
 

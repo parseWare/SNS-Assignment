@@ -21,9 +21,12 @@ def login(conn, addr, id , passw, cli_port):
     #print(obj.clientidpass)
     if id in obj.clientidpass:
         if(obj.clientidpass[id]==passw):
-            logged_in[id]=cli_port
-    
-            conn.send(("Logged in successfully;1").encode())
+            if id not in logged_in:
+                logged_in[id]=cli_port
+        
+                conn.send(("Logged in successfully;1").encode())
+            else:
+                conn.send(("already logged in;0").encode())
         else:
             conn.send(("password incorrect;0").encode())
     else:
@@ -55,10 +58,15 @@ def detctdata(conn ,addr, strn):
             if username not in obj.active_groups:
                 s="this user/group doesn't exists;0"
             else:
-                s=""
-                for usr in obj.active_groups[username]:
-                    s+=logged_in[usr]+";"
-                s+="1G"
+                print(obj.active_groups[username])
+                print(mylst[2])
+                if mylst[2] not in obj.active_groups[username]:
+                    s="not a member of this group;0"
+                else:
+                    s=""
+                    for usr in obj.active_groups[username]:
+                        s+=logged_in[usr]+";"
+                    s+="1G"
             conn.sendall(s.encode())
         elif username not in logged_in:
             conn.send(("this user is not logged in;0").encode())
@@ -81,8 +89,11 @@ def detctdata(conn ,addr, strn):
             obj.active_groups[mylst[1]].append(mylst[2])
             s="group created and joined successfully"
         else:
-            obj.active_groups[mylst[1]].append(mylst[2])
-            s="group joined successfully"
+            if mylst[2] not in obj.active_groups[mylst[1]]:
+                obj.active_groups[mylst[1]].append(mylst[2])
+                s="group joined successfully"
+            else:
+                s="already a member of this group"
         conn.sendall(s.encode())
 
     elif(mylst[0]=="list"):
